@@ -635,8 +635,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         if (!title) {
                           return episodeNumber;
                         }
-                        // 如果匹配"第X集"、"第X话"、"X集"、"X话"格式，提取中间的数字
-                        const match = title.match(/(?:第)?(\d+)(?:集|话)/);
+                        // 如果匹配"第X集"、"第X话"、"X集"、"X话"格式，提取中间的数字（支持小数）
+                        const match = title.match(/(?:第)?(\d+(?:\.\d+)?)(?:集|话)/);
                         if (match) {
                           return match[1];
                         }

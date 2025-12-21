@@ -91,6 +91,13 @@ export interface AdminConfig {
     cacheMinutes: number; // 缓存时间（分钟）
     cacheVersion: number; // CSS版本号（用于缓存控制）
   };
+  OpenListConfig?: {
+    URL: string; // OpenList 服务器地址
+    Token: string; // 认证 Token
+    RootPath: string; // 根目录路径，默认 "/"
+    LastRefreshTime?: number; // 上次刷新时间戳
+    ResourceCount?: number; // 资源数量
+  };
 }
 
 export interface AdminConfigResult {

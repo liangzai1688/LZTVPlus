@@ -2529,6 +2529,286 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
   );
 };
 
+// 私人影库配置组件
+const OpenListConfigComponent = ({
+  config,
+  refreshConfig,
+}: {
+  config: AdminConfig | null;
+  refreshConfig: () => Promise<void>;
+}) => {
+  const { alertModal, showAlert, hideAlert } = useAlertModal();
+  const { isLoading, withLoading } = useLoadingState();
+  const [url, setUrl] = useState('');
+  const [token, setToken] = useState('');
+  const [rootPath, setRootPath] = useState('/');
+  const [videos, setVideos] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (config?.OpenListConfig) {
+      setUrl(config.OpenListConfig.URL || '');
+      setToken(config.OpenListConfig.Token || '');
+      setRootPath(config.OpenListConfig.RootPath || '/');
+    }
+  }, [config]);
+
+  useEffect(() => {
+    if (config?.OpenListConfig?.URL && config?.OpenListConfig?.Token) {
+      fetchVideos();
+    }
+  }, [config]);
+
+  const fetchVideos = async () => {
+    try {
+      setRefreshing(true);
+      const response = await fetch('/api/openlist/list?page=1&pageSize=100');
+      if (response.ok) {
+        const data = await response.json();
+        setVideos(data.list || []);
+      }
+    } catch (error) {
+      console.error('获取视频列表失败:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    await withLoading('saveOpenList', async () => {
+      try {
+        const response = await fetch('/api/admin/openlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'save',
+            URL: url,
+            Token: token,
+            RootPath: rootPath,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || '保存失败');
+        }
+
+        showSuccess('保存成功', showAlert);
+        await refreshConfig();
+      } catch (error) {
+        showError(error instanceof Error ? error.message : '保存失败', showAlert);
+        throw error;
+      }
+    });
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const response = await fetch('/api/openlist/refresh', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || '刷新失败');
+      }
+
+      const result = await response.json();
+      showSuccess(
+        `刷新成功！新增 ${result.new} 个，已存在 ${result.existing} 个，失败 ${result.errors} 个`,
+        showAlert
+      );
+      await refreshConfig();
+      await fetchVideos();
+    } catch (error) {
+      showError(error instanceof Error ? error.message : '刷新失败', showAlert);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefreshVideo = async (folder: string) => {
+    try {
+      const response = await fetch('/api/openlist/refresh-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || '刷新失败');
+      }
+
+      showSuccess('刷新成功', showAlert);
+    } catch (error) {
+      showError(error instanceof Error ? error.message : '刷新失败', showAlert);
+    }
+  };
+
+  const formatDate = (timestamp?: number) => {
+    if (!timestamp) return '未刷新';
+    return new Date(timestamp).toLocaleString('zh-CN');
+  };
+
+  return (
+    <div className='space-y-6'>
+      {/* 配置表单 */}
+      <div className='space-y-4'>
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            OpenList URL
+          </label>
+          <input
+            type='text'
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder='https://your-openlist-server.com'
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+          />
+        </div>
+
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            OpenList Token
+          </label>
+          <input
+            type='password'
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder='your-token'
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+          />
+        </div>
+
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            根目录
+          </label>
+          <input
+            type='text'
+            value={rootPath}
+            onChange={(e) => setRootPath(e.target.value)}
+            placeholder='/'
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+          />
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            OpenList 中的视频文件夹路径，默认为根目录 /
+          </p>
+        </div>
+
+        <div className='flex gap-3'>
+          <button
+            onClick={handleSave}
+            disabled={isLoading('saveOpenList')}
+            className={buttonStyles.success}
+          >
+            {isLoading('saveOpenList') ? '保存中...' : '保存配置'}
+          </button>
+        </div>
+      </div>
+
+      {/* 视频列表区域 */}
+      {config?.OpenListConfig?.URL && config?.OpenListConfig?.Token && (
+        <div className='space-y-4'>
+          <div className='flex items-center justify-between'>
+            <div>
+              <h3 className='text-lg font-medium text-gray-900 dark:text-gray-100'>
+                视频列表
+              </h3>
+              <div className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+                <span>资源数: {config.OpenListConfig.ResourceCount || 0}</span>
+                <span className='mx-2'>|</span>
+                <span>
+                  上次更新: {formatDate(config.OpenListConfig.LastRefreshTime)}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className={buttonStyles.primary}
+            >
+              {refreshing ? '扫描中...' : '立即扫描'}
+            </button>
+          </div>
+
+          {refreshing ? (
+            <div className='text-center py-8 text-gray-500 dark:text-gray-400'>
+              加载中...
+            </div>
+          ) : videos.length > 0 ? (
+            <div className='overflow-x-auto'>
+              <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+                <thead className='bg-gray-50 dark:bg-gray-800'>
+                  <tr>
+                    <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                      标题
+                    </th>
+                    <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                      类型
+                    </th>
+                    <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                      年份
+                    </th>
+                    <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                      评分
+                    </th>
+                    <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                      操作
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className='bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700'>
+                  {videos.map((video) => (
+                    <tr key={video.id}>
+                      <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
+                        {video.title}
+                      </td>
+                      <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
+                        {video.mediaType === 'movie' ? '电影' : '剧集'}
+                      </td>
+                      <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
+                        {video.releaseDate.split('-')[0]}
+                      </td>
+                      <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
+                        {video.voteAverage.toFixed(1)}
+                      </td>
+                      <td className='px-6 py-4 whitespace-nowrap text-right text-sm'>
+                        <button
+                          onClick={() => handleRefreshVideo(video.folder)}
+                          className={buttonStyles.primarySmall}
+                        >
+                          刷新
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className='text-center py-8 text-gray-500 dark:text-gray-400'>
+              暂无视频，请点击"立即扫描"扫描视频库
+            </div>
+          )}
+        </div>
+      )}
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={hideAlert}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        timer={alertModal.timer}
+        showConfirm={alertModal.showConfirm}
+      />
+    </div>
+  );
+};
+
 // 视频源配置组件
 const VideoSourceConfig = ({
   config,
@@ -7017,6 +7297,7 @@ function AdminPageClient() {
   const [expandedTabs, setExpandedTabs] = useState<{ [key: string]: boolean }>({
     userConfig: false,
     videoSource: false,
+    openListConfig: false,
     liveSource: false,
     siteConfig: false,
     registrationConfig: false,
@@ -7229,6 +7510,18 @@ function AdminPageClient() {
               onToggle={() => toggleTab('videoSource')}
             >
               <VideoSourceConfig config={config} refreshConfig={fetchConfig} />
+            </CollapsibleTab>
+
+            {/* 私人影库配置标签 */}
+            <CollapsibleTab
+              title='私人影库'
+              icon={
+                <FolderOpen size={20} className='text-gray-600 dark:text-gray-400' />
+              }
+              isExpanded={expandedTabs.openListConfig}
+              onToggle={() => toggleTab('openListConfig')}
+            >
+              <OpenListConfigComponent config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
             {/* 直播源配置标签 */}

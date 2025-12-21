@@ -33,6 +33,9 @@ export async function GET(request: NextRequest) {
   const config = await getConfig();
   const apiSites = await getAvailableApiSites(authInfo.username);
 
+  // 检查是否配置了 OpenList
+  const hasOpenList = !!(config.OpenListConfig?.URL && config.OpenListConfig?.Token);
+
   // 共享状态
   let streamClosed = false;
 
@@ -62,7 +65,7 @@ export async function GET(request: NextRequest) {
       const startEvent = `data: ${JSON.stringify({
         type: 'start',
         query,
-        totalSources: apiSites.length,
+        totalSources: apiSites.length + (hasOpenList ? 1 : 0),
         timestamp: Date.now()
       })}\n\n`;
 
@@ -73,6 +76,123 @@ export async function GET(request: NextRequest) {
       // 记录已完成的源数量
       let completedSources = 0;
       const allResults: any[] = [];
+
+      // 搜索 OpenList（如果配置了）
+      if (hasOpenList) {
+        try {
+          const { getCachedMetaInfo } = await import('@/lib/openlist-cache');
+          const { getTMDBImageUrl } = await import('@/lib/tmdb.search');
+          const { OpenListClient } = await import('@/lib/openlist.client');
+
+          const rootPath = config.OpenListConfig!.RootPath || '/';
+          let metaInfo = getCachedMetaInfo(rootPath);
+
+          // 如果没有缓存，尝试从 OpenList 读取
+          if (!metaInfo) {
+            try {
+              const client = new OpenListClient(
+                config.OpenListConfig!.URL,
+                config.OpenListConfig!.Token
+              );
+              const metainfoPath = `${rootPath}${rootPath.endsWith('/') ? '' : '/'}metainfo.json`;
+              const fileResponse = await client.getFile(metainfoPath);
+
+              if (fileResponse.code === 200 && fileResponse.data.raw_url) {
+                const downloadUrl = fileResponse.data.raw_url;
+                const contentResponse = await fetch(downloadUrl, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': '*/*',
+                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                  },
+                });
+                const content = await contentResponse.text();
+                metaInfo = JSON.parse(content);
+              }
+            } catch (error) {
+              console.error('[Search WS] 读取 metainfo.json 失败:', error);
+            }
+          }
+
+          if (metaInfo && metaInfo.folders) {
+            const openlistResults = Object.entries(metaInfo.folders)
+              .filter(([folderName, info]: [string, any]) => {
+                const matchFolder = folderName.toLowerCase().includes(query.toLowerCase());
+                const matchTitle = info.title.toLowerCase().includes(query.toLowerCase());
+                return matchFolder || matchTitle;
+              })
+              .map(([folderName, info]: [string, any]) => ({
+                id: folderName,
+                source: 'openlist',
+                source_name: '私人影库',
+                title: info.title,
+                poster: getTMDBImageUrl(info.poster_path),
+                episodes: [],
+                episodes_titles: [],
+                year: info.release_date.split('-')[0] || '',
+                desc: info.overview,
+                type_name: info.media_type === 'movie' ? '电影' : '电视剧',
+                douban_id: 0,
+              }));
+
+            completedSources++;
+
+            if (!streamClosed) {
+              const sourceEvent = `data: ${JSON.stringify({
+                type: 'source_result',
+                source: 'openlist',
+                sourceName: '私人影库',
+                results: openlistResults,
+                timestamp: Date.now()
+              })}\n\n`;
+
+              if (!safeEnqueue(encoder.encode(sourceEvent))) {
+                streamClosed = true;
+                return;
+              }
+
+              if (openlistResults.length > 0) {
+                allResults.push(...openlistResults);
+              }
+            }
+          } else {
+            completedSources++;
+
+            if (!streamClosed) {
+              const sourceEvent = `data: ${JSON.stringify({
+                type: 'source_result',
+                source: 'openlist',
+                sourceName: '私人影库',
+                results: [],
+                timestamp: Date.now()
+              })}\n\n`;
+
+              if (!safeEnqueue(encoder.encode(sourceEvent))) {
+                streamClosed = true;
+                return;
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[Search WS] 搜索 OpenList 失败:', error);
+          completedSources++;
+
+          if (!streamClosed) {
+            const errorEvent = `data: ${JSON.stringify({
+              type: 'source_error',
+              source: 'openlist',
+              sourceName: '私人影库',
+              error: error instanceof Error ? error.message : '搜索失败',
+              timestamp: Date.now()
+            })}\n\n`;
+
+            if (!safeEnqueue(encoder.encode(errorEvent))) {
+              streamClosed = true;
+              return;
+            }
+          }
+        }
+      }
 
       // 为每个源创建搜索 Promise
       const searchPromises = apiSites.map(async (site) => {
@@ -141,7 +261,7 @@ export async function GET(request: NextRequest) {
         }
 
         // 检查是否所有源都已完成
-        if (completedSources === apiSites.length) {
+        if (completedSources === apiSites.length + (hasOpenList ? 1 : 0)) {
           if (!streamClosed) {
             // 发送最终完成事件
             const completeEvent = `data: ${JSON.stringify({

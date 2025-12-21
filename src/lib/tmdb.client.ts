@@ -45,6 +45,29 @@ interface TMDBTVAiringTodayResponse {
   total_results: number;
 }
 
+// 代理 agent 缓存，避免每次都创建新实例
+const proxyAgentCache = new Map<string, HttpsProxyAgent<string>>();
+
+/**
+ * 获取或创建代理 agent（复用连接池）
+ */
+function getProxyAgent(proxy: string): HttpsProxyAgent<string> {
+  if (!proxyAgentCache.has(proxy)) {
+    const agent = new HttpsProxyAgent(proxy, {
+      // 增加超时时间
+      timeout: 30000, // 30秒
+      // 保持连接活跃
+      keepAlive: true,
+      keepAliveMsecs: 60000, // 60秒
+      // 最大空闲连接数
+      maxSockets: 10,
+      maxFreeSockets: 5,
+    });
+    proxyAgentCache.set(proxy, agent);
+  }
+  return proxyAgentCache.get(proxy)!;
+}
+
 /**
  * 获取即将上映的电影
  * @param apiKey - TMDB API Key
@@ -65,7 +88,14 @@ export async function getTMDBUpcomingMovies(
     }
 
     const url = `https://api.themoviedb.org/3/movie/upcoming?api_key=${apiKey}&language=zh-CN&page=${page}&region=${region}`;
-    const fetchOptions: any = proxy ? { agent: new HttpsProxyAgent(proxy) } : {};
+    const fetchOptions: any = proxy
+      ? {
+          agent: getProxyAgent(proxy),
+          signal: AbortSignal.timeout(30000),
+        }
+      : {
+          signal: AbortSignal.timeout(15000),
+        };
 
     const response = await fetch(url, fetchOptions);
 
@@ -105,7 +135,14 @@ export async function getTMDBUpcomingTVShows(
 
     // 使用 on_the_air 接口获取正在播出的电视剧
     const url = `https://api.themoviedb.org/3/tv/on_the_air?api_key=${apiKey}&language=zh-CN&page=${page}`;
-    const fetchOptions: any = proxy ? { agent: new HttpsProxyAgent(proxy) } : {};
+    const fetchOptions: any = proxy
+      ? {
+          agent: getProxyAgent(proxy),
+          signal: AbortSignal.timeout(30000),
+        }
+      : {
+          signal: AbortSignal.timeout(15000),
+        };
 
     const response = await fetch(url, fetchOptions);
 
