@@ -128,6 +128,7 @@ export interface SearchResult {
   douban_id?: number;
   vod_remarks?: string; // 视频备注信息（如"全80集"、"更新至25集"等）
   vod_total?: number; // 总集数
+  proxyMode?: boolean; // 代理模式：启用后由服务器代理m3u8和ts分片
 }
 
 // 豆瓣数据结构

@@ -143,6 +143,7 @@ export async function GET(request: NextRequest) {
         desc: folderMeta?.overview || '',
         episodes: episodes.map((ep) => `/api/openlist/play?folder=${encodeURIComponent(folderName)}&fileName=${encodeURIComponent(ep.fileName)}`),
         episodes_titles: episodes.map((ep) => ep.title),
+        proxyMode: false, // openlist 源不使用代理模式
       };
 
       return NextResponse.json(result);
@@ -167,9 +168,16 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await getDetailFromApi(apiSite, id);
+
+    // 添加 proxyMode 到返回结果
+    const resultWithProxy = {
+      ...result,
+      proxyMode: apiSite.proxyMode || false,
+    };
+
     const cacheTime = await getCacheTime();
 
-    return NextResponse.json(result, {
+    return NextResponse.json(resultWithProxy, {
       headers: {
         'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
         'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,

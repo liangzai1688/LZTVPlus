@@ -681,6 +681,9 @@ function PlayPageClient() {
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
 
+  // 视频源代理模式状态
+  const [sourceProxyMode, setSourceProxyMode] = useState(false);
+
   // 总集数
   const totalEpisodes = detail?.episodes?.length || 0;
 
@@ -1048,9 +1051,13 @@ function PlayPageClient() {
     const hasLocalFile = await checkLocalDownload(currentSource, currentId, episodeIndex);
 
     if (hasLocalFile) {
-      // 使用本地代理接口，URL以.m3u8结尾以便Artplayer自动识别
+      // 使用本地代理接口,URL以.m3u8结尾以便Artplayer自动识别
       newUrl = `/api/offline-download/local/${currentSource}/${currentId}/${episodeIndex}/playlist.m3u8`;
       console.log('使用本地下载文件播放:', newUrl);
+    } else if (sourceProxyMode && newUrl) {
+      // 如果视频源启用了代理模式,且不是本地下载,则通过代理播放
+      newUrl = `/api/proxy/vod/m3u8?url=${encodeURIComponent(newUrl)}&source=${encodeURIComponent(currentSource)}`;
+      console.log('使用代理模式播放:', newUrl);
     }
 
     if (newUrl !== videoUrl) {
@@ -2041,6 +2048,7 @@ function PlayPageClient() {
       setVideoCover(detailData.poster);
       setVideoDoubanId(detailData.douban_id || 0);
       setDetail(detailData);
+      setSourceProxyMode(detailData.proxyMode || false); // 从 detail 数据中读取代理模式
       if (currentEpisodeIndex >= detailData.episodes.length) {
         setCurrentEpisodeIndex(0);
       }
@@ -2145,6 +2153,7 @@ function PlayPageClient() {
         setVideoCover(targetSource.poster);
         setVideoDoubanId(targetSource.douban_id || 0);
         setDetail(targetSource);
+        setSourceProxyMode(targetSource.proxyMode || false); // 从 detail 数据中读取代理模式
 
         // 更新集数
         if (targetEpisode >= 0 && targetEpisode < targetSource.episodes.length) {
@@ -2274,6 +2283,7 @@ function PlayPageClient() {
       setCurrentSource(newSource);
       setCurrentId(newId);
       setDetail(newDetail);
+      setSourceProxyMode(newDetail.proxyMode || false); // 从 detail 数据中读取代理模式
       setCurrentEpisodeIndex(targetIndex);
     } catch (err) {
       // 隐藏换源加载状态

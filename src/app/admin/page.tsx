@@ -358,6 +358,7 @@ interface DataSource {
   detail?: string;
   disabled?: boolean;
   from: 'config' | 'custom';
+  proxyMode?: boolean;
 }
 
 // 直播源数据类型
@@ -3490,6 +3491,53 @@ const VideoSourceConfig = ({
     });
   };
 
+  const handleToggleProxyMode = (key: string) => {
+    const target = sources.find((s) => s.key === key);
+    if (!target) return;
+
+    // 更新本地状态
+    setSources((prev) =>
+      prev.map((s) =>
+        s.key === key ? { ...s, proxyMode: !s.proxyMode } : s
+      )
+    );
+
+    // 调用API更新
+    withLoading(`toggleProxyMode_${key}`, async () => {
+      try {
+        const response = await fetch('/api/admin/source', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'toggle_proxy_mode',
+            key,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `操作失败: ${response.status}`);
+        }
+
+        await refreshConfig();
+      } catch (error) {
+        // 失败时回滚本地状态
+        setSources((prev) =>
+          prev.map((s) =>
+            s.key === key ? { ...s, proxyMode: !s.proxyMode } : s
+          )
+        );
+        showError(
+          error instanceof Error ? error.message : '切换代理模式失败',
+          showAlert
+        );
+        throw error;
+      }
+    }).catch(() => {
+      console.error('操作失败', 'toggle_proxy_mode', key);
+    });
+  };
+
   const handleAddSource = () => {
     if (!newSource.name || !newSource.key || !newSource.api) return;
     withLoading('addSource', async () => {
@@ -3776,6 +3824,31 @@ const VideoSourceConfig = ({
           >
             {!source.disabled ? '启用中' : '已禁用'}
           </span>
+        </td>
+        <td className='px-6 py-4 whitespace-nowrap text-center'>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleProxyMode(source.key);
+            }}
+            disabled={isLoading(`toggleProxyMode_${source.key}`)}
+            className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors ${
+              source.proxyMode
+                ? 'bg-blue-600 dark:bg-blue-500'
+                : 'bg-gray-200 dark:bg-gray-700'
+            } ${
+              isLoading(`toggleProxyMode_${source.key}`)
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer'
+            }`}
+            title={source.proxyMode ? '代理模式已启用' : '代理模式已禁用'}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                source.proxyMode ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
         </td>
         <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
           {(() => {
@@ -4127,6 +4200,9 @@ const VideoSourceConfig = ({
               </th>
               <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                 状态
+              </th>
+              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                代理模式
               </th>
               <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                 有效性

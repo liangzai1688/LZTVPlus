@@ -72,6 +72,7 @@ export interface AdminConfig {
     detail?: string;
     from: 'config' | 'custom';
     disabled?: boolean;
+    proxyMode?: boolean; // 代理模式开关：启用后由服务器代理m3u8和ts分片
   }[];
   CustomCategories: {
     name?: string;
