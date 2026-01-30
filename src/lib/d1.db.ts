@@ -1480,6 +1480,18 @@ export class D1Storage implements IStorage {
       throw err;
     }
   }
+
+  async updateLastMovieRequestTime(userName: string, timestamp: number): Promise<void> {
+    try {
+      await this.db
+        .prepare('UPDATE users SET last_movie_request_time = ? WHERE username = ?')
+        .bind(timestamp, userName)
+        .run();
+    } catch (err) {
+      console.error('D1Storage.updateLastMovieRequestTime error:', err);
+      throw err;
+    }
+  }
 }
 
 /**
